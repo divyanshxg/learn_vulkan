@@ -6,6 +6,12 @@ file(COPY resources DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 add_executable(Executable main.cpp)
 
+target_compile_definitions(
+    Executable
+    PRIVATE
+    VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+)
+
 # FIND PACKAGE SECTION
 # --------------------
 # Search for GLEW, which should be installed via Homebrew.
@@ -30,7 +36,7 @@ target_link_libraries(
     glad
     assimp
     GLEW::GLEW            # Modern CMake target for GLEW, replacing GLEW_LIBRARIES variable
-    customClass 
+    # customClass 
     stb_image 
     glm
     "-framework OpenGL"   # MANDATORY for linking system OpenGL on macOS
