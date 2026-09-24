@@ -170,6 +170,24 @@ private:
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
+    createImageViews();
+  }
+
+  void createImageViews() {
+    assert(swapChainImageViews.empty());
+
+    vk::ImageViewCreateInfo imageViewCreateInfo{
+        .viewType = vk::ImageViewType::e2D,
+        .format = swapChainSurfaceFormat.format,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+    imageViewCreateInfo.components = {
+        vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
+        vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity};
+
+    for (auto &image : swapChainImages) {
+      imageViewCreateInfo.image = image;
+      swapChainImageViews.emplace_back(device, imageViewCreateInfo);
+    }
   }
 
   void createSwapChain() {
