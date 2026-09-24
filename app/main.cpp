@@ -58,6 +58,7 @@ private:
   // logical device
   vk::raii::Device device = nullptr;
   vk::raii::Queue graphicsQueue = nullptr;
+  vk::raii::SurfaceKHR surface = nullptr;
 
   void initWindow() {
     glfwInit();
@@ -158,9 +159,20 @@ private:
   void initVulkan() {
     createInstance();
     setupDebugMessenger();
+    createSurface();
 
     pickPhysicalDevice();
     createLogicalDevice();
+  }
+
+  void createSurface() {
+    VkSurfaceKHR _surface;
+
+    if (glfwCreateWindowSurface(*instance, window, nullptr, &_surface) != 0) {
+      throw std::runtime_error("failed to create window surface");
+    }
+
+    surface = vk::raii::SurfaceKHR(instance, _surface);
   }
 
   void createLogicalDevice() {
@@ -168,18 +180,21 @@ private:
     // find the index of the first queue family that supports graphics
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties =
         physicalDevice.getQueueFamilyProperties();
-
-    // get the first index into queueFamilyProperties which supports graphics
-    auto graphicsQueueFamilyProperty =
-        std::ranges::find_if(queueFamilyProperties, [](auto const &qfp) {
-          return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) !=
-                 static_cast<vk::QueueFlags>(0);
-        });
-    assert(graphicsQueueFamilyProperty != queueFamilyProperties.end() &&
-           "No graphics queue family found!");
-
-    auto graphicsIndex = static_cast<uint32_t>(std::distance(
-        queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+    uint32_t queueIndex = ~0;
+    for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size();
+         qfpIndex++) {
+      if ((queueFamilyProperties[qfpIndex].queueFlags &
+           vk::QueueFlagBits::eGraphics) &&
+          physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface)) {
+        // found a queue family that supports both graphics and present
+        queueIndex = qfpIndex;
+        break;
+      }
+    }
+    if (queueIndex == ~0) {
+      throw std::runtime_error(
+          "Could not find a queue for graphics and present -> terminating");
+    }
 
     // query for Vulkan 1.3 features
     vk::StructureChain<vk::PhysicalDeviceFeatures2,
@@ -198,7 +213,7 @@ private:
     // create a Device
     float queuePriority = 0.5f;
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo{
-        .queueFamilyIndex = graphicsIndex,
+        .queueFamilyIndex = queueIndex,
         .queueCount = 1,
         .pQueuePriorities = &queuePriority};
     vk::DeviceCreateInfo deviceCreateInfo{
@@ -210,7 +225,7 @@ private:
         .ppEnabledExtensionNames = requiredDeviceExtension.data()};
 
     device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-    graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+    graphicsQueue = vk::raii::Queue(device, queueIndex, 0);
   }
 
   bool isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice) {
@@ -220,9 +235,16 @@ private:
 
     // Check if any of the queue families support graphics operations
     auto queueFamilies = physicalDevice.getQueueFamilyProperties();
-    bool supportsGraphics =
-        std::ranges::any_of(queueFamilies, [](auto const &qfp) {
-          return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics);
+
+    uint32_t qfpIndex = 0;
+    bool supportsGraphicsAndPresent = std::ranges::any_of(
+        queueFamilies, [&physicalDevice, &surface = this->surface,
+                        &qfpIndex](auto const &qfp) {
+          bool const suitable =
+              (qfp.queueFlags & vk::QueueFlagBits::eGraphics) &&
+              physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface);
+          qfpIndex++;
+          return suitable;
         });
 
     // Check if all required physicalDevice extensions are available
@@ -255,7 +277,7 @@ private:
             .extendedDynamicState;
 
     // Return true if the physicalDevice meets all the criteria
-    return supportsVulkan1_3 && supportsGraphics &&
+    return supportsVulkan1_3 && supportsGraphicsAndPresent &&
            supportsAllRequiredExtensions && supportsRequiredFeatures;
   }
 
