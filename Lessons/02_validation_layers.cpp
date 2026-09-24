@@ -2,7 +2,6 @@
 #include "vulkan/vulkan_core.h"
 #include <algorithm>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <ranges>
 #include <vector>
@@ -24,8 +23,6 @@ const std::vector<char const *> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 
 };
-std::vector<const char *> requiredDeviceExtension = {
-    vk::KHRSwapchainExtensionName};
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -46,8 +43,6 @@ private:
   GLFWwindow *window = nullptr;
   vk::raii::Context context;
   vk::raii::Instance instance = nullptr;
-  vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-  vk::raii::PhysicalDevice physicalDevice = nullptr;
 
   void initWindow() {
     glfwInit();
@@ -72,10 +67,6 @@ private:
 #ifdef __APPLE__
     extensions.push_back(vk::KHRPortabilityEnumerationExtensionName);
 #endif
-
-    if (enableValidationLayers) {
-      extensions.push_back(vk::EXTDebugUtilsExtensionName);
-    }
 
     return extensions;
   }
@@ -145,71 +136,7 @@ private:
     instance = vk::raii::Instance(context, createInfo);
   }
 
-  void initVulkan() {
-    createInstance();
-    setupDebugMessenger();
-
-    pickPhysicalDevice();
-  }
-
-  bool isDeviceSuitable(vk::raii::PhysicalDevice const &physicalDevice) {
-    // Check if the physicalDevice supports the Vulkan 1.3 API version
-    bool supportsVulkan1_3 =
-        physicalDevice.getProperties().apiVersion >= vk::ApiVersion13;
-
-    // Check if any of the queue families support graphics operations
-    auto queueFamilies = physicalDevice.getQueueFamilyProperties();
-    bool supportsGraphics =
-        std::ranges::any_of(queueFamilies, [](auto const &qfp) {
-          return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics);
-        });
-
-    // Check if all required physicalDevice extensions are available
-    auto availableDeviceExtensions =
-        physicalDevice.enumerateDeviceExtensionProperties();
-    bool supportsAllRequiredExtensions = std::ranges::all_of(
-        requiredDeviceExtension,
-        [&availableDeviceExtensions](auto const &requiredDeviceExtension) {
-          return std::ranges::any_of(
-              availableDeviceExtensions,
-              [requiredDeviceExtension](auto const &availableDeviceExtension) {
-                return strcmp(availableDeviceExtension.extensionName,
-                              requiredDeviceExtension) == 0;
-              });
-        });
-
-    // Check if the physicalDevice supports the required features (shader draw
-    // parameters, dynamic rendering and extended dynamic state)
-    auto features = physicalDevice.template getFeatures2<
-        vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan11Features,
-        vk::PhysicalDeviceVulkan13Features,
-        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-    bool supportsRequiredFeatures =
-        features.template get<vk::PhysicalDeviceVulkan11Features>()
-            .shaderDrawParameters &&
-        features.template get<vk::PhysicalDeviceVulkan13Features>()
-            .dynamicRendering &&
-        features
-            .template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>()
-            .extendedDynamicState;
-
-    // Return true if the physicalDevice meets all the criteria
-    return supportsVulkan1_3 && supportsGraphics &&
-           supportsAllRequiredExtensions && supportsRequiredFeatures;
-  }
-
-  void pickPhysicalDevice() {
-    std::vector<vk::raii::PhysicalDevice> physicalDevices =
-        instance.enumeratePhysicalDevices();
-    auto const devIter =
-        std::ranges::find_if(physicalDevices, [&](auto const &physicalDevice) {
-          return isDeviceSuitable(physicalDevice);
-        });
-    if (devIter == physicalDevices.end()) {
-      throw std::runtime_error("failed to find a suitable GPU!");
-    }
-    physicalDevice = *devIter;
-  }
+  void initVulkan() { createInstance(); }
 
   void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
@@ -221,39 +148,6 @@ private:
     glfwDestroyWindow(window);
 
     glfwTerminate();
-  }
-
-  void setupDebugMessenger() {
-    if (!enableValidationLayers)
-      return;
-
-    vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
-    vk::DebugUtilsMessageTypeFlagsEXT messageTypeFlags(
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance |
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation);
-    vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{
-        .messageSeverity = severityFlags,
-        .messageType = messageTypeFlags,
-        .pfnUserCallback = &debugCallback};
-    debugMessenger =
-        instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
-  }
-
-  // Debug Callback
-  static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
-      vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-      vk::DebugUtilsMessageTypeFlagsEXT type,
-      const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *) {
-    if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError ||
-        severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
-      std::cerr << "validation layer: type " << to_string(type)
-                << " msg: " << pCallbackData->pMessage << std::endl;
-    }
-
-    return vk::False;
   }
 };
 
